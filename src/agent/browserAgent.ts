@@ -103,7 +103,7 @@ export async function runBrowserAgent(input: {
           }
           log('info', `tool call ${toolName}`, { arguments: args });
           const preparedArgs = prepareToolArgs(toolName, args, navigationTimeoutMs);
-          const result = await driver.callTool(toolName, preparedArgs, job.timeoutMs || 300000, signal);
+          const result = await callToolWithRetry(driver, toolName, preparedArgs, job.timeoutMs || 300000, signal, log);
           const toolText = stringifyResult(result);
           log('debug', `tool result ${toolName}`, { preview: toolText.slice(0, 4000) });
           messages.push({
@@ -228,6 +228,45 @@ function prepareToolArgs(toolName: string, args: unknown, navigationTimeoutMs: n
     ...current,
     timeout,
   };
+}
+
+async function callToolWithRetry(
+  driver: McpBrowserDriver,
+  toolName: string,
+  args: unknown,
+  timeoutMs: number,
+  signal: AbortSignal,
+  log: (level: JobLogEntry['level'], message: string, data?: unknown) => void,
+): Promise<any> {
+  const maxAttempts = shouldRetryForTool(toolName) ? 3 : 1;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      if (attempt > 1) {
+        log('warn', `retrying tool ${toolName}`, { attempt, maxAttempts });
+        await sleep(3000);
+      }
+      return await driver.callTool(toolName, args, timeoutMs, signal);
+    } catch (err) {
+      lastError = err;
+      if (attempt >= maxAttempts || !shouldRetryInteractiveFailure(toolName, err)) throw err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError || `Tool call failed: ${toolName}`));
+}
+
+function shouldRetryForTool(toolName: string): boolean {
+  return toolName === 'fill_form' || toolName === 'fill' || toolName === 'click' || toolName === 'press_key';
+}
+
+function shouldRetryInteractiveFailure(toolName: string, err: unknown): boolean {
+  if (!shouldRetryForTool(toolName)) return false;
+  const message = String((err as any)?.message || err || '');
+  return /did not become interactive within the configured timeout|request timed out|request canceled|worker exited|worker is not running/i.test(message);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function closeNewPages(
