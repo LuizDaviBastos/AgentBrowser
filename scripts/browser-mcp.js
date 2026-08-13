@@ -114,20 +114,18 @@ async function ensureChromeLinux() {
 
   trace('starting chromium via puppeteer');
   const puppeteer = require('puppeteer');
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: [
-      `--remote-debugging-port=${CHROME_PORT}`,
-      `--user-data-dir=${CHROME_PROFILE}`,
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--disable-dev-shm-usage',
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--new-window',
-      'about:blank',
-    ],
-  });
+  let browser;
+  try {
+    browser = await launchChromium(puppeteer);
+  } catch (err) {
+    if (isMissingChromiumError(err)) {
+      trace('chromium missing, installing browser');
+      await installChromium();
+      browser = await launchChromium(puppeteer);
+    } else {
+      throw err;
+    }
+  }
   const browserProc = browser.process();
   if (browserProc) {
     browserProc.on('exit', (code, signal) => trace(`chromium exit code=${code} signal=${signal || ''}`));
@@ -148,6 +146,51 @@ async function ensureChromeLinux() {
   trace('failed to start chromium');
   await browser.close().catch(() => {});
   throw new Error(`Failed to start Chromium on port ${CHROME_PORT}.`);
+}
+
+async function launchChromium(puppeteer) {
+  return puppeteer.launch({
+    headless: 'new',
+    args: [
+      `--remote-debugging-port=${CHROME_PORT}`,
+      `--user-data-dir=${CHROME_PROFILE}`,
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-dev-shm-usage',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--new-window',
+      'about:blank',
+    ],
+  });
+}
+
+function isMissingChromiumError(err) {
+  const text = String(err && err.message ? err.message : err || '');
+  return /Could not find Chrome|Chrome \(ver\./i.test(text);
+}
+
+async function installChromium() {
+  const child = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
+    'exec',
+    '--yes',
+    'puppeteer',
+    '--',
+    'browsers',
+    'install',
+    'chrome',
+  ], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+    },
+  });
+  child.stdout.on('data', chunk => trace(`chromium install stdout ${chunk.toString().trimEnd()}`));
+  child.stderr.on('data', chunk => trace(`chromium install stderr ${chunk.toString().trimEnd()}`));
+  const code = await new Promise(resolve => child.on('exit', resolve));
+  if (code !== 0) {
+    throw new Error(`Failed to install Chromium (exit code ${code})`);
+  }
 }
 
 function resolveWorkerCommand() {
