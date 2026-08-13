@@ -1,5 +1,6 @@
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
@@ -114,14 +115,15 @@ async function ensureChromeLinux() {
 
   trace('starting chromium via puppeteer');
   const puppeteer = require('puppeteer');
+  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-browser-'));
   let browser;
   try {
-    browser = await launchChromium(puppeteer);
+    browser = await launchChromium(puppeteer, profileDir);
   } catch (err) {
     if (isMissingChromiumError(err)) {
       trace('chromium missing, installing browser');
       await installChromium();
-      browser = await launchChromium(puppeteer);
+      browser = await launchChromium(puppeteer, profileDir);
     } else {
       throw err;
     }
@@ -148,12 +150,12 @@ async function ensureChromeLinux() {
   throw new Error(`Failed to start Chromium on port ${CHROME_PORT}.`);
 }
 
-async function launchChromium(puppeteer) {
+async function launchChromium(puppeteer, profileDir) {
   return puppeteer.launch({
     headless: 'new',
     args: [
       `--remote-debugging-port=${CHROME_PORT}`,
-      `--user-data-dir=${CHROME_PROFILE}`,
+      `--user-data-dir=${profileDir || CHROME_PROFILE}`,
       '--no-first-run',
       '--no-default-browser-check',
       '--disable-dev-shm-usage',
