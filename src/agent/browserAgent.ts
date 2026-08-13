@@ -31,6 +31,7 @@ export async function runBrowserAgent(input: {
 }): Promise<BrowserStepResult> {
   const { job, driver, deepseekApiKey, signal, log } = input;
   if (!deepseekApiKey) throw new Error('DEEPSEEK_API_KEY is required for browser jobs');
+  const navigationTimeoutMs = Math.min(Math.max(job.timeoutMs || 300000, 60000), 180000);
 
   const tools = await driver.listTools(signal);
   if (!tools.length) throw new Error('The browser MCP server exposed no tools');
@@ -101,7 +102,8 @@ export async function runBrowserAgent(input: {
             args = rawArgs;
           }
           log('info', `tool call ${toolName}`, { arguments: args });
-          const result = await driver.callTool(toolName, args, job.timeoutMs || 300000, signal);
+          const preparedArgs = prepareToolArgs(toolName, args, navigationTimeoutMs);
+          const result = await driver.callTool(toolName, preparedArgs, job.timeoutMs || 300000, signal);
           const toolText = stringifyResult(result);
           log('debug', `tool result ${toolName}`, { preview: toolText.slice(0, 4000) });
           messages.push({
@@ -211,6 +213,21 @@ function extractJson(text: string): unknown | null {
     } catch {}
   }
   return null;
+}
+
+function prepareToolArgs(toolName: string, args: unknown, navigationTimeoutMs: number): unknown {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
+  if (toolName !== 'new_page' && toolName !== 'navigate_page' && toolName !== 'wait_for') return args;
+
+  const current = args as Record<string, unknown>;
+  const timeout = typeof current.timeout === 'number' && Number.isFinite(current.timeout) && current.timeout > 0
+    ? current.timeout
+    : navigationTimeoutMs;
+
+  return {
+    ...current,
+    timeout,
+  };
 }
 
 async function closeNewPages(
