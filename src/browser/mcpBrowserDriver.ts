@@ -17,6 +17,7 @@ export class McpBrowserDriver implements BrowserDriver {
   private proc: ChildProcessWithoutNullStreams | null = null;
   private pending = new Map<number, { resolve: (value: any) => void; reject: (err: Error) => void }>();
   private nextId = 1;
+  private readonly startupTimeoutMs = 120000;
 
   constructor(
     private command: string,
@@ -152,7 +153,7 @@ export class McpBrowserDriver implements BrowserDriver {
         name: 'agent-browser-api',
         version: '0.1.0',
       },
-    }, 5000);
+    }, this.startupTimeoutMs);
     this.notify('notifications/initialized', {});
   }
 
