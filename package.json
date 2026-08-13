@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "vite build --config web/vite.config.ts && tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "npm run build && node dist/index.js",
     "dev": "node --watch dist/index.js",
     "dev:web": "vite --config web/vite.config.ts",
     "test": "tsc -p tsconfig.json && node --test dist/tests/smoke.test.js dist/tests/server.test.js"
