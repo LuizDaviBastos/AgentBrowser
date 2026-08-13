@@ -9,6 +9,8 @@ const CHROME_PROFILE = path.join(ROOT_DIR, '.runtime', 'chrome-profile');
 const CHROME_PORT = 9222;
 const CHROME_URL = `http://127.0.0.1:${CHROME_PORT}`;
 const LOG_FILE = path.join(ROOT_DIR, '.runtime', 'browser-mcp.log');
+const NODE_EXE = resolveNodeExe();
+const NPM_CLI = resolveNpmCli();
 
 if (!fs.existsSync(CHROME_PROFILE)) fs.mkdirSync(CHROME_PROFILE, { recursive: true });
 
@@ -19,6 +21,28 @@ function trace(message) {
   } catch {}
 }
 
+function resolveNpmCli() {
+  const nodeDir = path.dirname(process.execPath);
+  const candidates = [
+    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'nodejs', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(nodeDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(nodeDir, '..', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function resolveNodeExe() {
+  if (process.platform !== 'win32') return process.execPath;
+  const bundled = path.join(ROOT_DIR, '.runtime', 'node-v22.12.0-win-x64', 'node.exe');
+  if (fs.existsSync(bundled)) return bundled;
+  return process.execPath;
+}
+
 async function main() {
   trace(`launcher start pid=${process.pid} node=${process.execPath}`);
   await ensureChrome();
@@ -26,12 +50,18 @@ async function main() {
 
   const worker = resolveWorkerCommand();
   trace(`starting worker command=${worker.command} args=${worker.args.join(' ')}`);
+  const nodeBinDir = path.dirname(NODE_EXE);
+  const workerEnv = {
+    ...process.env,
+    PATH: `${nodeBinDir}${path.delimiter}${process.env.PATH || ''}`,
+  };
+  if (process.platform === 'win32') {
+    workerEnv.Path = workerEnv.PATH;
+  }
   const child = spawn(worker.command, worker.args, {
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
-    env: {
-      ...process.env,
-    },
+    env: workerEnv,
   });
   trace(`spawned chrome-devtools-mcp pid=${child.pid}`);
 
@@ -196,10 +226,11 @@ async function installChromium() {
 }
 
 function resolveWorkerCommand() {
-  if (process.platform === 'win32') {
+  if (process.platform === 'win32' && NPM_CLI) {
     return {
-      command: 'npm.cmd',
+      command: NODE_EXE,
       args: [
+        NPM_CLI,
         'exec',
         '--yes',
         'chrome-devtools-mcp@latest',
