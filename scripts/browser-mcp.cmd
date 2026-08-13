@@ -3,11 +3,16 @@ setlocal
 
 set "ROOT_DIR=%~dp0.."
 for %%I in ("%ROOT_DIR%") do set "ROOT_DIR=%%~fI"
-set "NODE_DIR=%ROOT_DIR%\.runtime\node-v20.20.2-win-x64"
+set "NODE_DIR=%ROOT_DIR%\.runtime\node-v22.12.0-win-x64"
+if not exist "%NODE_DIR%\node.exe" set "NODE_DIR=%ProgramFiles%\nodejs"
+set "NPM_DIR=%ProgramFiles%\nodejs\node_modules\npm\bin"
 set "CHROME_EXE=C:\Program Files\Google\Chrome\Application\chrome.exe"
 set "CHROME_PROFILE=%ROOT_DIR%\.runtime\chrome-profile"
 set "CHROME_PORT=9222"
 set "CHROME_URL=http://127.0.0.1:%CHROME_PORT%"
+set "NPX_CLI_JS=%NPM_DIR%\npx-cli.js"
+set "NODE_EXE=%NODE_DIR%\node.exe"
+set "PATH=%NODE_DIR%;%PATH%"
 
 if not exist "%CHROME_PROFILE%" mkdir "%CHROME_PROFILE%" >nul 2>nul
 
@@ -21,8 +26,7 @@ if errorlevel 1 (
   )
 )
 
-set "PATH=%NODE_DIR%;%PATH%"
-call "%NODE_DIR%\npx.cmd" -y chrome-devtools-mcp@latest --browser-url %CHROME_URL% %*
+call "%NODE_EXE%" "%NPX_CLI_JS%" -y chrome-devtools-mcp@latest --browser-url %CHROME_URL% %*
 exit /b %ERRORLEVEL%
 
 :PortReady

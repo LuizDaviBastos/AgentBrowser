@@ -1,0 +1,118 @@
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const ROOT_DIR = path.resolve(__dirname, '..');
+const NODE_DIR = path.join(ROOT_DIR, '.runtime', 'node-v22.12.0-win-x64');
+const NODE_EXE = fs.existsSync(path.join(NODE_DIR, 'node.exe'))
+  ? path.join(NODE_DIR, 'node.exe')
+  : path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs', 'node.exe');
+const NPX_CLI_JS = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs', 'node_modules', 'npm', 'bin', 'npx-cli.js');
+const CHROME_EXE = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const CHROME_PROFILE = path.join(ROOT_DIR, '.runtime', 'chrome-profile');
+const CHROME_PORT = 9222;
+const CHROME_URL = `http://127.0.0.1:${CHROME_PORT}`;
+const LOG_FILE = path.join(ROOT_DIR, '.runtime', 'browser-mcp.log');
+
+if (!fs.existsSync(CHROME_PROFILE)) fs.mkdirSync(CHROME_PROFILE, { recursive: true });
+
+function trace(message) {
+  const line = `[${new Date().toISOString()}] ${message}\n`;
+  try {
+    fs.appendFileSync(LOG_FILE, line);
+  } catch {}
+}
+
+async function main() {
+  trace(`launcher start pid=${process.pid} node=${process.execPath}`);
+  await ensureChrome();
+  trace(`chrome ready url=${CHROME_URL}`);
+
+  const child = spawn(NODE_EXE, [
+    NPX_CLI_JS,
+    '-y',
+    'chrome-devtools-mcp@latest',
+    '--browser-url',
+    CHROME_URL,
+    ...process.argv.slice(2),
+  ], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+    env: {
+      ...process.env,
+      PATH: `${NODE_DIR}${path.delimiter}${process.env.PATH || ''}`,
+      Path: `${NODE_DIR}${path.delimiter}${process.env.PATH || ''}`,
+    },
+  });
+  trace(`spawned chrome-devtools-mcp pid=${child.pid}`);
+
+  process.stdin.pipe(child.stdin);
+  child.stdout.pipe(process.stdout);
+  child.stderr.on('data', chunk => {
+    const text = chunk.toString();
+    trace(`child stderr ${text.trimEnd()}`);
+    process.stderr.write(`[browser-mcp] ${text}`);
+  });
+
+  const shutdown = () => {
+    trace('launcher shutdown requested');
+    try { child.kill(); } catch {}
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+  child.on('exit', (code, signal) => {
+    trace(`child exit code=${code} signal=${signal || ''}`);
+    process.exit(code ?? 0);
+  });
+  child.on('error', err => {
+    trace(`child error ${err?.message || err}`);
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+async function ensureChrome() {
+  try {
+    const res = await fetch(`http://127.0.0.1:${CHROME_PORT}/json/version`, { method: 'GET' });
+    if (res.ok) {
+      trace('chrome already running');
+      return;
+    }
+  } catch {}
+
+  trace('starting chrome');
+  const chrome = spawn(CHROME_EXE, [
+    `--remote-debugging-port=${CHROME_PORT}`,
+    `--user-data-dir=${CHROME_PROFILE}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--new-window',
+    'about:blank',
+  ], {
+    detached: true,
+    windowsHide: true,
+    stdio: 'ignore',
+  });
+  chrome.unref();
+
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${CHROME_PORT}/json/version`, { method: 'GET' });
+      if (res.ok) {
+        trace('chrome ready after start');
+        return;
+      }
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  trace('failed to start chrome');
+  throw new Error(`Failed to start Chrome on port ${CHROME_PORT}.`);
+}
+
+main().catch(err => {
+  trace(`launcher fatal ${err?.message || err}`);
+  console.error(err);
+  process.exit(1);
+});

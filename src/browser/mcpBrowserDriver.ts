@@ -98,7 +98,7 @@ export class McpBrowserDriver implements BrowserDriver {
   private async ensureProcess(): Promise<void> {
     if (this.proc) return;
     if (!this.command) throw new Error('BROWSER_MCP_COMMAND is not set');
-    const useShell = process.platform === 'win32';
+    const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(this.command);
     let child: ChildProcessWithoutNullStreams;
     try {
       const nodeBinDir = path.dirname(process.execPath);
@@ -145,7 +145,15 @@ export class McpBrowserDriver implements BrowserDriver {
       for (const [, pending] of this.pending) pending.reject(new Error('Browser MCP worker exited'));
       this.pending.clear();
     });
-    await this.request('initialize', { clientName: 'agent-browser-api', version: '0.1.0' }, 5000);
+    await this.request('initialize', {
+      protocolVersion: '2025-03-26',
+      capabilities: {},
+      clientInfo: {
+        name: 'agent-browser-api',
+        version: '0.1.0',
+      },
+    }, 5000);
+    this.notify('notifications/initialized', {});
   }
 
   private request(method: string, params: unknown, timeoutMs: number, signal?: AbortSignal): Promise<any> {
@@ -183,6 +191,12 @@ export class McpBrowserDriver implements BrowserDriver {
       });
       child.stdin.write(JSON.stringify(payload) + '\n');
     });
+  }
+
+  private notify(method: string, params: unknown): void {
+    const child = this.proc;
+    if (!child) return;
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n');
   }
 }
 
