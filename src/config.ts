@@ -27,7 +27,7 @@ export function loadConfig(): AppConfig {
   const dataDir = path.resolve(process.env.DATA_DIR || path.join(process.cwd(), '.data'));
   fs.mkdirSync(dataDir, { recursive: true });
   return {
-    host: process.env.HOST || '127.0.0.1',
+    host: process.env.HOST || '0.0.0.0',
     port: parseIntEnv('PORT', 8787),
     apiKey: process.env.API_KEY || '',
     deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
