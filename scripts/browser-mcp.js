@@ -3,11 +3,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
-const NODE_DIR = path.join(ROOT_DIR, '.runtime', 'node-v22.12.0-win-x64');
-const NODE_EXE = fs.existsSync(path.join(NODE_DIR, 'node.exe'))
-  ? path.join(NODE_DIR, 'node.exe')
-  : path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs', 'node.exe');
-const NPX_CLI_JS = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs', 'node_modules', 'npm', 'bin', 'npx-cli.js');
 const CHROME_EXE = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const CHROME_PROFILE = path.join(ROOT_DIR, '.runtime', 'chrome-profile');
 const CHROME_PORT = 9222;
@@ -28,20 +23,13 @@ async function main() {
   await ensureChrome();
   trace(`chrome ready url=${CHROME_URL}`);
 
-  const child = spawn(NODE_EXE, [
-    NPX_CLI_JS,
-    '-y',
-    'chrome-devtools-mcp@latest',
-    '--browser-url',
-    CHROME_URL,
-    ...process.argv.slice(2),
-  ], {
+  const worker = resolveWorkerCommand();
+  trace(`starting worker command=${worker.command} args=${worker.args.join(' ')}`);
+  const child = spawn(worker.command, worker.args, {
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
     env: {
       ...process.env,
-      PATH: `${NODE_DIR}${path.delimiter}${process.env.PATH || ''}`,
-      Path: `${NODE_DIR}${path.delimiter}${process.env.PATH || ''}`,
     },
   });
   trace(`spawned chrome-devtools-mcp pid=${child.pid}`);
@@ -72,6 +60,10 @@ async function main() {
 }
 
 async function ensureChrome() {
+  if (process.platform !== 'win32') {
+    await ensureChromeLinux();
+    return;
+  }
   try {
     const res = await fetch(`http://127.0.0.1:${CHROME_PORT}/json/version`, { method: 'GET' });
     if (res.ok) {
@@ -109,6 +101,82 @@ async function ensureChrome() {
 
   trace('failed to start chrome');
   throw new Error(`Failed to start Chrome on port ${CHROME_PORT}.`);
+}
+
+async function ensureChromeLinux() {
+  try {
+    const res = await fetch(`http://127.0.0.1:${CHROME_PORT}/json/version`, { method: 'GET' });
+    if (res.ok) {
+      trace('chrome already running');
+      return;
+    }
+  } catch {}
+
+  trace('starting chromium via puppeteer');
+  const puppeteer = require('puppeteer');
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: [
+      `--remote-debugging-port=${CHROME_PORT}`,
+      `--user-data-dir=${CHROME_PROFILE}`,
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-dev-shm-usage',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--new-window',
+      'about:blank',
+    ],
+  });
+  const browserProc = browser.process();
+  if (browserProc) {
+    browserProc.on('exit', (code, signal) => trace(`chromium exit code=${code} signal=${signal || ''}`));
+  }
+
+  const deadline = Date.now() + 60000;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${CHROME_PORT}/json/version`, { method: 'GET' });
+      if (res.ok) {
+        trace('chrome ready after start');
+        return;
+      }
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  trace('failed to start chromium');
+  await browser.close().catch(() => {});
+  throw new Error(`Failed to start Chromium on port ${CHROME_PORT}.`);
+}
+
+function resolveWorkerCommand() {
+  if (process.platform === 'win32') {
+    return [
+      'npm.cmd',
+      [
+        'exec',
+        '--yes',
+        'chrome-devtools-mcp@latest',
+        '--',
+        '--browser-url',
+        CHROME_URL,
+        ...process.argv.slice(2),
+      ],
+    ];
+  }
+  return [
+    'npm',
+    [
+      'exec',
+      '--yes',
+      'chrome-devtools-mcp@latest',
+      '--',
+      '--browser-url',
+      CHROME_URL,
+      ...process.argv.slice(2),
+    ],
+  ];
 }
 
 main().catch(err => {
