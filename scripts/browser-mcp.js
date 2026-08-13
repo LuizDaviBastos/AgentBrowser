@@ -197,9 +197,9 @@ async function installChromium() {
 
 function resolveWorkerCommand() {
   if (process.platform === 'win32') {
-    return [
-      'npm.cmd',
-      [
+    return {
+      command: 'npm.cmd',
+      args: [
         'exec',
         '--yes',
         'chrome-devtools-mcp@latest',
@@ -208,11 +208,11 @@ function resolveWorkerCommand() {
         CHROME_URL,
         ...process.argv.slice(2),
       ],
-    ];
+    };
   }
-  return [
-    'npm',
-    [
+  return {
+    command: 'npm',
+    args: [
       'exec',
       '--yes',
       'chrome-devtools-mcp@latest',
@@ -221,7 +221,7 @@ function resolveWorkerCommand() {
       CHROME_URL,
       ...process.argv.slice(2),
     ],
-  ];
+  };
 }
 
 main().catch(err => {
