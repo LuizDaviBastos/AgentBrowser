@@ -31,7 +31,7 @@ export async function runBrowserAgent(input: {
 }): Promise<BrowserStepResult> {
   const { job, driver, deepseekApiKey, signal, log } = input;
   if (!deepseekApiKey) throw new Error('DEEPSEEK_API_KEY is required for browser jobs');
-  const navigationTimeoutMs = Math.min(Math.max(job.timeoutMs || 300000, 60000), 180000);
+  const navigationTimeoutMs = resolveNavigationTimeoutMs(job.timeoutMs);
 
   const tools = await driver.listTools(signal);
   if (!tools.length) throw new Error('The browser MCP server exposed no tools');
@@ -267,6 +267,12 @@ function shouldRetryInteractiveFailure(toolName: string, err: unknown): boolean 
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function resolveNavigationTimeoutMs(jobTimeoutMs?: number): number {
+  const configured = Number(process.env.BROWSER_NAVIGATION_TIMEOUT_MS || 0);
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  return Math.max(jobTimeoutMs || 300000, 60000);
 }
 
 async function closeNewPages(
