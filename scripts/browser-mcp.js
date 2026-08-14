@@ -11,6 +11,8 @@ const CHROME_URL = `http://127.0.0.1:${CHROME_PORT}`;
 const LOG_FILE = path.join(ROOT_DIR, '.runtime', 'browser-mcp.log');
 const NODE_EXE = resolveNodeExe();
 const NPM_CLI = resolveNpmCli();
+const PROTOCOL_TIMEOUT_MS = Number(process.env.PUPPETEER_PROTOCOL_TIMEOUT_MS || 240000);
+const BROWSER_LAUNCH_TIMEOUT_MS = Number(process.env.PUPPETEER_LAUNCH_TIMEOUT_MS || 240000);
 
 if (!fs.existsSync(CHROME_PROFILE)) fs.mkdirSync(CHROME_PROFILE, { recursive: true });
 
@@ -183,6 +185,8 @@ async function ensureChromeLinux() {
 async function launchChromium(puppeteer, profileDir) {
   return puppeteer.launch({
     headless: 'new',
+    timeout: BROWSER_LAUNCH_TIMEOUT_MS,
+    protocolTimeout: PROTOCOL_TIMEOUT_MS,
     args: [
       `--remote-debugging-port=${CHROME_PORT}`,
       `--user-data-dir=${profileDir || CHROME_PROFILE}`,
