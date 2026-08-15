@@ -220,9 +220,10 @@ function prepareToolArgs(toolName: string, args: unknown, navigationTimeoutMs: n
   if (toolName !== 'new_page' && toolName !== 'navigate_page' && toolName !== 'wait_for') return args;
 
   const current = args as Record<string, unknown>;
-  const timeout = typeof current.timeout === 'number' && Number.isFinite(current.timeout) && current.timeout > 0
+  const requested = typeof current.timeout === 'number' && Number.isFinite(current.timeout) && current.timeout > 0
     ? current.timeout
     : navigationTimeoutMs;
+  const timeout = Math.max(requested, navigationTimeoutMs);
 
   return {
     ...current,
